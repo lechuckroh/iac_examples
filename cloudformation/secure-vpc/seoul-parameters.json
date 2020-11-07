@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "AZ1",
+    "ParameterValue": "ap-northeast-2a"
+  },
+  {
+    "ParameterKey": "AZ2",
+    "ParameterValue": "ap-northeast-2b"
+  },
+  {
+    "ParameterKey": "VPCCIDR",
+    "ParameterValue": "172.31.0.0/21"
+  },
+  {
+    "ParameterKey": "PublicSubnetACIDR",
+    "ParameterValue": "172.31.0.0/23"
+  },
+  {
+    "ParameterKey": "PublicSubnetBCIDR",
+    "ParameterValue": "172.31.2.0/23"
+  },
+  {
+    "ParameterKey": "PrivateSubnetACIDR",
+    "ParameterValue": "172.31.4.0/23"
+  },
+  {
+    "ParameterKey": "PrivateSubnetBCIDR",
+    "ParameterValue": "172.31.6.0/23"
+  }
+]
