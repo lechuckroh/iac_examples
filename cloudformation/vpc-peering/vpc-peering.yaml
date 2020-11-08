@@ -1,0 +1,232 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: VPC Peering
+
+Parameters:
+  EC2KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  AZ:
+    Description: AZ name
+    Type: AWS::EC2::AvailabilityZone::Name
+  PrivateVPCCIDR:
+    Description: CIDR block for PrivateVPC
+    Type: String
+  PublicVPCCIDR:
+    Description: CIDR block for PublicVPC
+    Type: String
+  PrivateVPCSubnetCIDR:
+    Description: CIDR block for subnet on PrivateVPC
+    Type: String
+  PublicVPCSubnetCIDR:
+    Description: CIDR block for subnet on PublicVPC
+    Type: String
+
+Mappings:
+  AWSRegionToAMI:
+    us-east-1:
+      '64': ami-0947d2ba12ee1ff75
+    ap-northeast-2:
+      '64': ami-03b42693dc6a7dc35
+
+Resources:
+  ##################
+  # Private VPC
+  ##################
+
+  PrivateVPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref PrivateVPCCIDR
+      EnableDnsSupport: false
+      EnableDnsHostnames: false
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: PrivateVPC
+
+  PrivateVPCSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref AZ
+      CidrBlock: !Ref PrivateVPCSubnetCIDR
+      VpcId: !Ref PrivateVPC
+      Tags:
+        - Key: Name
+          Value: Subnet A on PrivateVPC
+
+  #########################
+  # Private VPC Route Table
+  #########################
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref PrivateVPC
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateVPCSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  ##################
+  # Public VPC
+  ##################
+
+  PublicVPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref PublicVPCCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: PublicVPC
+
+  PublicVPCSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref AZ
+      CidrBlock: !Ref PublicVPCSubnetCIDR
+      VpcId: !Ref PublicVPC
+      Tags:
+        - Key: Name
+          Value: Subnet A on PublicVPC
+
+  #############################
+  # Public VPC Internet Gateway
+  #############################
+
+  PublicIGW:
+    Type: AWS::EC2::InternetGateway
+
+  AttachPublicIGW:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref PublicVPC
+      InternetGatewayId: !Ref PublicIGW
+
+  ########################
+  # Public VPC Route Table
+  ########################
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref PublicVPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachPublicIGW
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref PublicIGW
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicVPCSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  ##################
+  # VPC Peering
+  ##################
+
+  VPCPeering:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      PeerVpcId: !Ref PrivateVPC
+      VpcId: !Ref PublicVPC
+      Tags:
+        - Key: Name
+          Value: VPC Peering from PublicVPC to PrivateVPC
+      
+  PeeringRouteToPublicVPC:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      VpcPeeringConnectionId: !Ref VPCPeering
+
+  PeeringRouteToPrivateVPC:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: !Ref PrivateVPCCIDR
+      VpcPeeringConnectionId: !Ref VPCPeering
+
+  ##################
+  # Security Group
+  ##################
+
+  PrivateVPCEC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Private VPC instance security group
+      VpcId: !Ref PrivateVPC
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: '-1'
+          ToPort: '-1'
+          CidrIp: 0.0.0.0/0
+
+  PublicVPCEC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public VPC instance security group
+      VpcId: !Ref PublicVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+
+  ##################
+  # EC2 Instance
+  ##################
+
+  PrivateInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      SecurityGroupIds:
+        - !Ref PrivateVPCEC2SecurityGroup
+      InstanceType: t2.micro
+      SubnetId: !Ref PrivateVPCSubnet
+      KeyName: !Ref EC2KeyPairName
+      ImageId: !FindInMap
+        - AWSRegionToAMI
+        - !Ref 'AWS::Region'
+        - '64'
+
+  PublicInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: 'true'
+          DeviceIndex: '0'
+          GroupSet:
+            - !Ref PublicVPCEC2SecurityGroup
+          SubnetId: !Ref PublicVPCSubnet
+      InstanceType: t2.micro
+      KeyName: !Ref EC2KeyPairName
+      ImageId: !FindInMap
+        - AWSRegionToAMI
+        - !Ref 'AWS::Region'
+        - '64'
+
+Outputs:
+  PrivateVPC:
+    Value: !Ref PrivateVPC
+  PublicVPC:
+    Value: !Ref PublicVPC
+  PrivateVPCSubnet:
+    Value: !Ref PrivateVPCSubnet
+  PublicVPCSubnet:
+    Value: !Ref PublicVPCSubnet
+  PrivateInstance:
+    Value: !Ref PrivateInstance
+  PublicInstance:
+    Value: !Ref PublicInstance
